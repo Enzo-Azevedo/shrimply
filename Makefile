@@ -5,6 +5,18 @@ CUDA_HOME ?= /usr/local/cuda
 CUDA_TOOLKIT_PATH ?= $(CUDA_HOME)
 CUDA_OXIDE_TARGET ?= sm_86
 CUDA_OXIDE_DEBUG ?= off
+
+# Compute backend. `cuda` builds the $(CUDA_OXIDE_TARGET) device artifacts that
+# the host crates embed with `include_bytes!`. `none` skips them so a checkout
+# without the CUDA toolkit can still run `make check`; every target that
+# compiles those host crates stops instead of failing later inside cargo.
+BACKEND ?= cuda
+ifeq ($(filter $(BACKEND),cuda none),)
+$(error BACKEND=$(BACKEND) is unsupported: use cuda or none)
+endif
+CUDA_ARTIFACTS_REQUIRED := $(if $(filter cuda,$(BACKEND)),cuda-artifacts,cuda-backend-required)
+CUDA_ARTIFACTS_OPTIONAL := $(if $(filter cuda,$(BACKEND)),cuda-artifacts)
+CUDA_RUST_CHECKS := $(if $(filter cuda,$(BACKEND)),cargo-check lint,cuda-checks-skipped)
 SOURCE_LINE_LIMIT ?= 2000
 SLANG_SOURCE_DIR ?= $(CURDIR)/external/slang
 SLANG_BUILD_DIR ?= $(SLANG_SOURCE_DIR)/build
@@ -103,7 +115,7 @@ FEDORA_PACKAGES := \
 	poppler-glib-devel \
 	freetype-devel
 
-.PHONY: native-deps qt-native-deps qt-desktop-file cuda-target-check cuda-artifacts dev qt-build dev-qt dev-server docs docs-check run run-qt build release check server-python-check manim manim-python-check manim-parameter-check cargo-check fmt fmt-check lint test frame-rate-test video-lifecycle-test transparent-fill-frame-range-test transparent-fill-cache-test transparent-fill-decoder-test transparent-fill-kernel-test transparent-fill-compositor-test transparent-fill-playback-test transparent-fill-e2e-fixture transparent-fill-e2e-test decode-ahead-benchmark paint-interpolation-test crash-report oxide-doctor oxide-setup clean-dev clean deps-fedora install install-codex-mcp-dev install-agy-mcp-dev uninstall
+.PHONY: native-deps qt-native-deps qt-desktop-file cuda-target-check cuda-artifacts cuda-backend-required cuda-checks-skipped dev qt-build dev-qt dev-server docs docs-check run run-qt build release check server-python-check manim manim-python-check manim-parameter-check cargo-check fmt fmt-check lint test frame-rate-test video-lifecycle-test transparent-fill-frame-range-test transparent-fill-cache-test transparent-fill-decoder-test transparent-fill-kernel-test transparent-fill-compositor-test transparent-fill-playback-test transparent-fill-e2e-fixture transparent-fill-e2e-test decode-ahead-benchmark paint-interpolation-test crash-report oxide-doctor oxide-setup clean-dev clean deps-fedora install install-codex-mcp-dev install-agy-mcp-dev uninstall
 
 native-deps:
 	@$(PKG_CONFIG) --exists rubberband || { echo "Missing Rubber Band development files (pkg-config: rubberband)" >&2; exit 1; }
@@ -119,6 +131,12 @@ cuda-target-check:
 	@test "$(CUDA_OXIDE_TARGET)" = sm_86 || { echo "CUDA_OXIDE_TARGET=$(CUDA_OXIDE_TARGET) is unsupported: host binaries embed sm_86 CUDA artifacts" >&2; exit 1; }
 
 cuda-artifacts: cuda-target-check $(CUDA_CUBINS)
+
+cuda-backend-required:
+	@echo "BACKEND=$(BACKEND) has no build path: crates/video and crates/video/anime4k embed the $(CUDA_OXIDE_TARGET) cubins with include_bytes!" >&2; exit 1
+
+cuda-checks-skipped:
+	@echo "BACKEND=$(BACKEND): skipping cargo-check and lint, which compile the host crates that embed the $(CUDA_OXIDE_TARGET) cubins" >&2
 
 $(CUDA_CUBINS): | cuda-target-check
 
@@ -189,7 +207,7 @@ $(EXPORT_CUBIN): $(CUDA_EXPORT_SOURCES) $(CUDA_LINK_SOURCES)
 	mv "$$tmp" $@
 
 dev: SHELL := /bin/bash
-dev: native-deps cuda-artifacts
+dev: native-deps $(CUDA_ARTIFACTS_REQUIRED)
 	$(DEV_BUILD_ENV) CARGO_TERM_COLOR=always $(CARGO) build -p $(EDITOR_PACKAGE) -p $(LAUNCHER_PACKAGE) -p $(MCP_PACKAGE) --bins
 	@started="$$(date --iso-8601=seconds)"; \
 	# Do not replace this with `cargo oxide run`: it forces release opt-level=3 \
@@ -203,7 +221,7 @@ dev: native-deps cuda-artifacts
 	fi; \
 	exit $$status
 
-qt-build: native-deps qt-native-deps cuda-artifacts
+qt-build: native-deps qt-native-deps $(CUDA_ARTIFACTS_REQUIRED)
 	$(DEV_BUILD_ENV) QMAKE=$(QT_QMAKE) CARGO_TERM_COLOR=always $(CARGO) build -p $(QT_EDITOR_PACKAGE) -p $(QT_LAUNCHER_PACKAGE) -p $(MCP_PACKAGE) --bins
 
 dev-qt: SHELL := /bin/bash
@@ -236,13 +254,13 @@ run: dev
 run-qt: qt-build qt-desktop-file
 	$(BUILD_ENV) RUST_LOG=$(RUST_LOG) target/debug/$(QT_BIN_NAME)
 
-build: native-deps cuda-artifacts
+build: native-deps $(CUDA_ARTIFACTS_REQUIRED)
 	$(DEV_BUILD_ENV) $(CARGO) build -p $(EDITOR_PACKAGE) -p $(LAUNCHER_PACKAGE) -p $(MCP_PACKAGE) --bins
 
-release: native-deps cuda-artifacts
+release: native-deps $(CUDA_ARTIFACTS_REQUIRED)
 	$(BUILD_ENV) $(CARGO) build --release -p $(EDITOR_PACKAGE) -p $(LAUNCHER_PACKAGE) -p $(MCP_PACKAGE) --bins
 
-check: native-deps cuda-artifacts fmt source-size-check cargo-check lint server-python-check manim-python-check docs-check
+check: native-deps $(CUDA_ARTIFACTS_OPTIONAL) fmt source-size-check $(CUDA_RUST_CHECKS) server-python-check manim-python-check docs-check
 
 source-size-check:
 	@oversized="$$(rg --files -g '!external/**' -g '!target/**' | while IFS= read -r source_file; do \
@@ -287,19 +305,19 @@ transparent-fill-cache-test: native-deps
 transparent-fill-decoder-test: native-deps
 	$(DEV_BUILD_ENV) $(CARGO) test -p shrimply-video-decoder tests::accurate_out_of_order_requests_map_30fps_positions_to_24fps_frames -- --exact --test-threads=1 --nocapture
 
-transparent-fill-kernel-test: native-deps cuda-artifacts
+transparent-fill-kernel-test: native-deps $(CUDA_ARTIFACTS_REQUIRED)
 	$(DEV_BUILD_ENV) $(CARGO) test -p shrimply-video modifiers::transparent_fill::tests::cached_mask_applies_with_the_cuda_kernel -- --exact --test-threads=1
 
-transparent-fill-compositor-test: native-deps cuda-artifacts
+transparent-fill-compositor-test: native-deps $(CUDA_ARTIFACTS_REQUIRED)
 	$(DEV_BUILD_ENV) $(CARGO) test -p shrimply-video modifiers::transparent_fill::tests::preview_compositor_applies_each_out_of_order_project_frame_mask -- --exact --ignored --test-threads=1
 
-transparent-fill-playback-test: native-deps cuda-artifacts
+transparent-fill-playback-test: native-deps $(CUDA_ARTIFACTS_REQUIRED)
 	$(DEV_BUILD_ENV) $(CARGO) test -p shrimply-video modifiers::transparent_fill::tests::preview_uses_the_mask_for_each_project_frame -- --exact --ignored --test-threads=1 --nocapture
 
 transparent-fill-e2e-fixture: native-deps
 	$(DEV_BUILD_ENV) $(CARGO) test -p shrimply-video modifiers::transparent_fill::tests::generates_transparent_fill_end_to_end_fixture -- --exact --test-threads=1 --nocapture
 
-transparent-fill-e2e-test: native-deps cuda-artifacts
+transparent-fill-e2e-test: native-deps $(CUDA_ARTIFACTS_REQUIRED)
 	$(DEV_BUILD_ENV) $(CARGO) test -p shrimply-video modifiers::transparent_fill::tests::transparent_fill_analyzes_and_renders_a_real_project_end_to_end -- --exact --ignored --test-threads=1 --nocapture
 
 fmt:
@@ -327,7 +345,7 @@ fmt-check:
 lint:
 	$(DEV_BUILD_ENV) $(CARGO) clippy -p $(EDITOR_PACKAGE) -p $(LAUNCHER_PACKAGE) -p $(MCP_PACKAGE) --bins -- -D warnings
 
-test: cuda-artifacts
+test: $(CUDA_ARTIFACTS_REQUIRED)
 	$(DEV_BUILD_ENV) $(CARGO) test
 
 decode-ahead-benchmark:

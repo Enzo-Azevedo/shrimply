@@ -38,6 +38,33 @@ source size, the selected Rust binaries, Clippy, the server and Manim Python
 code, and this documentation site. The development launcher writes its log to
 ``target/shrimply-dev.log``.
 
+Building without the CUDA toolkit
+---------------------------------
+
+``BACKEND`` selects the compute backend and defaults to ``cuda``, which builds
+the ``sm_86`` device artifacts under ``.oxide-artifacts``. ``BACKEND=none``
+skips those artifacts:
+
+.. code-block:: console
+
+   $ make check BACKEND=none
+
+This runs formatting, the source size limit, the server and Manim Python
+checks, and the documentation build on a checkout with no CUDA toolkit
+installed. It skips ``cargo-check`` and ``lint``, and reports that it did.
+
+Those two are skipped because they compile ``shrimply-editor-ui``, which
+reaches ``shrimply-video``. ``make components-check`` is the Rust check that
+does run without the artifacts: the component crates and their showcases
+depend on neither ``shrimply-video`` nor ``shrimply-anime4k``, so they need no
+cubin. It does need Qt 6.
+
+``BACKEND=none`` has no build path. ``make dev``, ``make build``,
+``make release``, ``make test`` and ``make qt-build`` stop immediately under it,
+because ``crates/video`` and ``crates/video/anime4k`` embed the ``sm_86``
+cubins with ``include_bytes!`` and cannot compile without them. Any other
+``BACKEND`` value is rejected when the Makefile is read.
+
 Build the documentation on its own with:
 
 .. code-block:: console

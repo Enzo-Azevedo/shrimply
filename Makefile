@@ -62,6 +62,10 @@ EDITOR_PACKAGE := shrimply-editor-ui
 QT_EDITOR_PACKAGE := shrimply-editor-qt-ui
 LAUNCHER_PACKAGE := shrimply-launcher-ui
 QT_LAUNCHER_PACKAGE := shrimply-launcher-qt-ui
+GTK_COMPONENTS_PACKAGE := shrimply-gtk-components
+QT_COMPONENTS_PACKAGE := shrimply-qt-components
+GTK_COMPONENTS_DEMO_PACKAGE := shrimply-gtk-components-demo
+QT_COMPONENTS_DEMO_PACKAGE := shrimply-qt-components-demo
 QT_BIN_NAME := shrimply-qt
 MCP_PACKAGE := shrimply-mcp
 MCP_BIN_NAME := shrimply-mcp
@@ -115,7 +119,7 @@ FEDORA_PACKAGES := \
 	poppler-glib-devel \
 	freetype-devel
 
-.PHONY: native-deps qt-native-deps qt-desktop-file cuda-target-check cuda-artifacts cuda-backend-required cuda-checks-skipped dev qt-build dev-qt dev-server docs docs-check run run-qt build release check server-python-check manim manim-python-check manim-parameter-check cargo-check fmt fmt-check lint test frame-rate-test video-lifecycle-test transparent-fill-frame-range-test transparent-fill-cache-test transparent-fill-decoder-test transparent-fill-kernel-test transparent-fill-compositor-test transparent-fill-playback-test transparent-fill-e2e-fixture transparent-fill-e2e-test decode-ahead-benchmark paint-interpolation-test crash-report oxide-doctor oxide-setup clean-dev clean deps-fedora install install-codex-mcp-dev install-agy-mcp-dev uninstall
+.PHONY: native-deps qt-native-deps qt-desktop-file cuda-target-check cuda-artifacts cuda-backend-required cuda-checks-skipped dev qt-build dev-qt dev-server docs docs-check run run-qt build release check components-check gtk-components-showcase qt-components-showcase dev-components-gtk dev-components-qt server-python-check manim manim-python-check manim-parameter-check cargo-check fmt fmt-check lint test frame-rate-test video-lifecycle-test transparent-fill-frame-range-test transparent-fill-decoder-test transparent-fill-kernel-test transparent-fill-compositor-test transparent-fill-playback-test transparent-fill-e2e-fixture transparent-fill-e2e-test decode-ahead-benchmark paint-interpolation-test crash-report oxide-doctor oxide-setup clean-dev clean deps-fedora install install-codex-mcp-dev install-agy-mcp-dev uninstall
 
 native-deps:
 	@$(PKG_CONFIG) --exists rubberband || { echo "Missing Rubber Band development files (pkg-config: rubberband)" >&2; exit 1; }
@@ -261,6 +265,20 @@ release: native-deps $(CUDA_ARTIFACTS_REQUIRED)
 	$(BUILD_ENV) $(CARGO) build --release -p $(EDITOR_PACKAGE) -p $(LAUNCHER_PACKAGE) -p $(MCP_PACKAGE) --bins
 
 check: native-deps $(CUDA_ARTIFACTS_OPTIONAL) fmt source-size-check $(CUDA_RUST_CHECKS) server-python-check manim-python-check docs-check
+
+components-check: native-deps qt-native-deps
+	$(DEV_BUILD_ENV) QMAKE=$(QT_QMAKE) $(CARGO) check -p $(GTK_COMPONENTS_PACKAGE) -p $(QT_COMPONENTS_PACKAGE) -p $(GTK_COMPONENTS_DEMO_PACKAGE) -p $(QT_COMPONENTS_DEMO_PACKAGE) --all-targets
+	$(DEV_BUILD_ENV) QMAKE=$(QT_QMAKE) $(CARGO) clippy -p $(GTK_COMPONENTS_PACKAGE) -p $(QT_COMPONENTS_PACKAGE) -p $(GTK_COMPONENTS_DEMO_PACKAGE) -p $(QT_COMPONENTS_DEMO_PACKAGE) --all-targets -- -D warnings
+
+gtk-components-showcase: native-deps
+	$(DEV_BUILD_ENV) $(CARGO) run -p $(GTK_COMPONENTS_DEMO_PACKAGE)
+
+qt-components-showcase: qt-native-deps
+	$(DEV_BUILD_ENV) QMAKE=$(QT_QMAKE) $(CARGO) run -p $(QT_COMPONENTS_DEMO_PACKAGE)
+
+dev-components-gtk: gtk-components-showcase
+
+dev-components-qt: qt-components-showcase
 
 source-size-check:
 	@oversized="$$(rg --files -g '!external/**' -g '!target/**' | while IFS= read -r source_file; do \

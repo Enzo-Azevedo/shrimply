@@ -140,7 +140,7 @@ cuda-backend-required:
 	@echo "BACKEND=$(BACKEND) has no build path: crates/video and crates/video/anime4k embed the $(CUDA_OXIDE_TARGET) cubins with include_bytes!" >&2; exit 1
 
 cuda-checks-skipped:
-	@echo "BACKEND=$(BACKEND): skipping cargo-check and lint, which compile the host crates that embed the $(CUDA_OXIDE_TARGET) cubins" >&2
+	@echo "BACKEND=$(BACKEND): skipping cargo-check and lint, which compile the host crates that embed the $(CUDA_OXIDE_TARGET) cubins. 'make components-check' checks and lints the component crates, which do not." >&2
 
 $(CUDA_CUBINS): | cuda-target-check
 
